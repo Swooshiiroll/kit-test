@@ -1,0 +1,74 @@
+name: CI
+
+# Every push to any branch: static checks, unit tests and a test build.
+# main only takes pull requests whose head commit passed all three.
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: "true"
+
+jobs:
+  check:
+    name: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Setup
+        run: tools/dev.sh setup
+      - name: Static checks
+        run: tools/dev.sh check
+
+  unit-tests:
+    name: unit-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Setup
+        run: tools/dev.sh setup
+      - name: Unit tests
+        run: tools/dev.sh test
+      - name: Test log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-log
+          path: out/*.log
+
+  build:
+    name: build
+    needs: [check, unit-tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Setup
+        run: tools/dev.sh setup
+      - name: Build
+        run: tools/dev.sh build
+      - name: Artifact name
+        id: names
+        run: echo "base=kit-test-${GITHUB_REF_NAME//\//-}-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+      - name: Test build
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.names.outputs.base }}
+          path: build/
+          retention-days: 14
